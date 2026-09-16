@@ -3,12 +3,27 @@ from pathlib import Path
 import numpy as np
 from scipy import stats
 from statsmodels.stats.multitest import multipletests
+import sys
+
+if "--all16" in sys.argv:
+    EXCLUDE, OUT_NAME = [], "04_stats_all16.csv"
+else:
+    EXCLUDE, OUT_NAME = ["GSM1089242"], "04_stats.csv"
 
 expression = pd.read_csv("data/processed/expr_log2.csv", index_col=0)
 meta = pd.read_csv("data/processed/meta.csv", index_col=0)
 annotation = pd.read_csv("data/processed/annotation.csv", index_col=0)
 detp = pd.read_csv("data/processed/detection_pvals.csv", index_col=0)
 assert all(meta.index == detp.columns), "detection table misaligned"
+
+if EXCLUDE:
+    meta = meta.drop(index=EXCLUDE)
+    expression = expression.drop(columns=EXCLUDE)
+    detp = detp.drop(columns=EXCLUDE)
+    print("excluded:", EXCLUDE, "->", expression.shape)
+assert all(meta.index == expression.columns) and all(meta.index == detp.columns)
+n_pe, n_ct = int((meta["diagnosis"] == "EOPET").sum()), int((meta["diagnosis"] == "Control").sum())
+print(f"groups: {n_pe} EOPET vs {n_ct} Control")
 
 print(expression.shape)
 print(expression.head(10))
@@ -19,7 +34,8 @@ print(all(meta.index == expression.columns))
 is_pe = meta["diagnosis"] == "EOPET"
 group_pe = expression.loc[:, is_pe.values]
 group_control = expression.loc[:, (~is_pe).values]
-assert group_pe.shape[1] == 8 and group_control.shape[1] == 8, (group_pe.shape, group_control.shape)
+assert group_pe.shape[1] == n_pe and group_control.shape[1] == n_ct
+
 #---------------------TESTS---------------------
 tstat, pval = stats.ttest_ind(group_pe, group_control, axis=1, equal_var=False)
 assert len(pval) == len(expression) and not np.isnan(pval).any()
@@ -97,7 +113,7 @@ for gene in panel:
         n_pe = int((detp.loc[pid, is_pe.values] < 0.05).sum())
         n_ct = int((detp.loc[pid, (~is_pe).values] < 0.05).sum())
         print(f"  {gene:7s} {pid}  detected in {n_pe}/8 PE, {n_ct}/8 Control  -> not tested")
-
  
 results.to_csv("results/04_stats.csv")
 print("results saved!")
+
